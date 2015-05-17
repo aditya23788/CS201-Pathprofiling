@@ -7,9 +7,7 @@
 #include "llvm/IR/Type.h"
 #include "llvm/Analysis/CFG.h"
 #include "llvm/ADT/SmallSet.h"
-//#include "llvm/Analysis/LoopInfo.h"
-//#include "llvm/IR/Dominators.h"
-//#include "../../IR/AsmWriter.h"
+#include <algorithm>
  
 using namespace llvm;
  
@@ -37,6 +35,8 @@ Function *printf_func = NULL;
 
 //----------------------------------
 void FindFunctionBackEdges(const Function &F, SmallVectorImpl<std::pair<const BasicBlock*,const BasicBlock*>> &Result);
+void LoopConstruction(SmallVectorImpl<std::pair<const BasicBlock*,const BasicBlock*>> &BackEdgesSet,std::vector<std::vector<const BasicBlock *>> &LoopSet);
+void Innermost_Loop(std::vector<std::vector<const BasicBlock *>> &Loopset);
 bool doInitialization(Module &M) {
 errs() << "\n---------Starting BasicBlockDemo---------\n";
 Context = &M.getContext();
@@ -60,13 +60,32 @@ return false;
 //----------------------------------
 bool runOnFunction(Function &F) override {
 SmallVector<std::pair<const BasicBlock*,const BasicBlock*>,32> BackEdgesSet;
+
 errs() << "Function: " << F.getName() << '\n';
 FindFunctionBackEdges(F,BackEdgesSet);
-	
 for (unsigned i = 0, e = BackEdgesSet.size(); i != e; ++i){
     errs() << llvm::BlockAddress::get(const_cast<BasicBlock*>(BackEdgesSet[i].first)) << " to " << llvm::BlockAddress::get(const_cast<BasicBlock*>(BackEdgesSet[i].second))<<"\n";
-    //LoopHeaders.insert(const_cast<BasicBlock*>(Edges[i].second));
-} 
+}
+std::vector<std::vector<const BasicBlock*>>LoopSet(BackEdgesSet.size());
+LoopConstruction(BackEdgesSet,LoopSet);	
+
+for (unsigned i = 0, e = LoopSet.size(); i != e; ++i){
+  for (unsigned m = 0, n = LoopSet[i].size(); m != n; ++m){
+    errs() << llvm::BlockAddress::get(const_cast<BasicBlock*>(LoopSet[i][m])) << "  ";
+  }
+    errs() << "\n";
+}
+
+if(!LoopSet.empty())
+    Innermost_Loop(LoopSet);
+
+for (unsigned i = 0, e = LoopSet.size(); i != e; ++i){
+    errs() << "Innermost Loop:";
+  for (unsigned m = 0, n = LoopSet[i].size(); m != n; ++m){
+    errs() << llvm::BlockAddress::get(const_cast<BasicBlock*>(LoopSet[i][m])) << "  ";
+  }
+    errs() << "\n";
+}
 
 for(auto &BB: F) {
 // Add the footer to Main's BB containing the return 0; statement BEFORE calling runOnBasicBlock
@@ -128,7 +147,7 @@ CallInst *call = builder.CreateCall2(printf_func, var_ref, bbc);
 call->setTailCall(false);
 }
 };
-
+}
 
 void BasicBlocksDemo::FindFunctionBackEdges(const Function &F,
      SmallVectorImpl<std::pair<const BasicBlock*,const BasicBlock*>> &Result) {
@@ -170,7 +189,46 @@ void BasicBlocksDemo::FindFunctionBackEdges(const Function &F,
     }
   } while (!VisitStack.empty());
 }
+
+void BasicBlocksDemo::LoopConstruction(SmallVectorImpl<std::pair<const BasicBlock*,const BasicBlock*>> &BackEdgesSet,std::vector<std::vector<const BasicBlock *>> &LoopSet){
+    std::vector<const BasicBlock *> Stack;
+    for (unsigned i = 0, e = BackEdgesSet.size(); i != e; ++i){
+          LoopSet[i].push_back(BackEdgesSet[i].second);
+	  //errs() << llvm::BlockAddress::get(const_cast<BasicBlock*>(LoopSet[i].back()))<<"\n";
+	  if(std::find(LoopSet[i].begin(),LoopSet[i].end(),BackEdgesSet[i].first)==LoopSet[i].end()){
+	      LoopSet[i].push_back(BackEdgesSet[i].first);
+	      Stack.push_back(BackEdgesSet[i].first);
+	      //errs() << llvm::BlockAddress::get(const_cast<BasicBlock*>(Stack.back()))<<"\n";
+	  }
+	  while(!Stack.empty()){
+	      
+	    const BasicBlock *temp = Stack.back();
+	    Stack.pop_back();
+	    for (const_pred_iterator PI = pred_begin(temp), E = pred_end(temp); PI != E; ++PI) {
+	      const BasicBlock *P = *PI;
+	      
+	      if(std::find(LoopSet[i].begin(),LoopSet[i].end(),P)==LoopSet[i].end()){
+		LoopSet[i].push_back(P);
+		Stack.push_back(P);
+	      }
+	    }
+	  } 
+  }
 }
- 
+
+
+void BasicBlocksDemo::Innermost_Loop(std::vector<std::vector<const BasicBlock *>> &Loopset){
+	for(unsigned long i = 0; i < Loopset.size()-1;){
+	    const BasicBlock* p = *(Loopset[i].begin());
+	    if(std::find(Loopset[i+1].begin(),Loopset[i+1].end(),p)!=Loopset[i+1].end()){
+		Loopset.erase(Loopset.begin()+1);
+	    }
+	    else if(p == *(Loopset[i+1].end()))
+		Loopset.erase(Loopset.begin()+1);
+	    else
+		++i;
+	}
+}
+
 char BasicBlocksDemo::ID = 0;
 static RegisterPass<BasicBlocksDemo> X("bbdemo", "BasicBlocksDemo Pass", false, false);
