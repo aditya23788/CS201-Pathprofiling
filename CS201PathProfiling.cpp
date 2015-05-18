@@ -7,12 +7,15 @@
 #include "llvm/IR/Type.h"
 #include "llvm/Analysis/CFG.h"
 #include "llvm/ADT/SmallSet.h"
-#include <unordered_map>
+
+#include <map>
+#include <algorithm>
 //#include "llvm/Analysis/LoopInfo.h"
 //#include "llvm/IR/Dominators.h"
 //#include "../../IR/AsmWriter.h"
  
 using namespace llvm;
+ 
  
 namespace {
 	// https://github.com/thomaslee/llvm-demo/blob/master/main.cc
@@ -38,8 +41,9 @@ namespace {
 
 	//----------------------------------
 	void FindFunctionBackEdges(const Function &F, SmallVectorImpl<std::pair<const BasicBlock*,const BasicBlock*>> &Result);
-	void computeEdgeWeights(BasicBlock* start,BasicBlock* end,std::unordered_map<std::pair<BasicBlock*,BasicBlock*>,int> &edges);
-	
+	void LoopConstruction(SmallVectorImpl<std::pair<const BasicBlock*,const BasicBlock*>> &BackEdgesSet,std::vector<std::vector<const BasicBlock *>> &LoopSet);
+	void Innermost_Loop(std::vector<std::vector<const BasicBlock *>> &Loopset);
+	void computeEdgeWeights(std::vector<std::vector<const BasicBlock *>> Loopset, std::map<std::pair<const BasicBlock*,const BasicBlock*>,int> &edges);
 	bool doInitialization(Module &M) {
 	errs() << "\n---------Starting BasicBlockDemo---------\n";
 	Context = &M.getContext();
@@ -50,8 +54,6 @@ namespace {
 	printf_func = printf_prototype(*Context, &M);
 	 
 	errs() << "Module: " << M.getName() << "\n";
-
-	//edgemap = new GlobalVariable(M, Type::
 	 
 	return true;
 	}
@@ -65,14 +67,32 @@ namespace {
 	//----------------------------------
 	bool runOnFunction(Function &F) override {
 	SmallVector<std::pair<const BasicBlock*,const BasicBlock*>,32> BackEdgesSet;
-	std::unordered_map<std::pair<BasicBlock*,BasicBlock*>,int> edges;
+
 	errs() << "Function: " << F.getName() << '\n';
 	FindFunctionBackEdges(F,BackEdgesSet);
-		
 	for (unsigned i = 0, e = BackEdgesSet.size(); i != e; ++i){
 		errs() << llvm::BlockAddress::get(const_cast<BasicBlock*>(BackEdgesSet[i].first)) << " to " << llvm::BlockAddress::get(const_cast<BasicBlock*>(BackEdgesSet[i].second))<<"\n";
-		//LoopHeaders.insert(const_cast<BasicBlock*>(Edges[i].second));
-	} 
+	}
+	std::vector<std::vector<const BasicBlock*>>LoopSet(BackEdgesSet.size());
+	LoopConstruction(BackEdgesSet,LoopSet);	
+
+	for (unsigned i = 0, e = LoopSet.size(); i != e; ++i){
+	  for (unsigned m = 0, n = LoopSet[i].size(); m != n; ++m){
+		errs() << llvm::BlockAddress::get(const_cast<BasicBlock*>(LoopSet[i][m])) << "  ";
+	  }
+		errs() << "\n";
+	}
+
+	if(!LoopSet.empty())
+		Innermost_Loop(LoopSet);
+
+	for (unsigned i = 0, e = LoopSet.size(); i != e; ++i){
+		errs() << "Innermost Loop:";
+	  for (unsigned m = 0, n = LoopSet[i].size(); m != n; ++m){
+		errs() << llvm::BlockAddress::get(const_cast<BasicBlock*>(LoopSet[i][m])) << "  ";
+	  }
+		errs() << "\n";
+	}
 
 	for(auto &BB: F) {
 	// Add the footer to Main's BB containing the return 0; statement BEFORE calling runOnBasicBlock
@@ -134,74 +154,128 @@ namespace {
 	call->setTailCall(false);
 	}
 	};
+}
+
+void BasicBlocksDemo::FindFunctionBackEdges(const Function &F,
+     SmallVectorImpl<std::pair<const BasicBlock*,const BasicBlock*>> &Result) {
+  const BasicBlock *BB = &F.getEntryBlock();
+  if (succ_empty(BB))
+    return;
+
+  SmallPtrSet<const BasicBlock*, 8> Visited;
+  SmallVector<std::pair<const BasicBlock*, succ_const_iterator>, 8> VisitStack;
+  SmallPtrSet<const BasicBlock*, 8> InStack;
+
+  Visited.insert(BB);
+  VisitStack.push_back(std::make_pair(BB, succ_begin(BB)));
+  InStack.insert(BB);
+  do {
+    std::pair<const BasicBlock*, succ_const_iterator> &Top = VisitStack.back();
+    const BasicBlock *ParentBB = Top.first;
+    succ_const_iterator &I = Top.second;
+
+    bool FoundNew = false;
+    while (I != succ_end(ParentBB)) {
+      BB = *I++;
+      if (Visited.insert(BB).second) {
+        FoundNew = true;
+        break;
+      }
+      // Successor is in VisitStack, it's a back edge.
+      if (InStack.count(BB))
+        Result.push_back(std::make_pair(ParentBB, BB));
+    }
+
+    if (FoundNew) {
+      // Go down one level if there is a unvisited successor.
+      InStack.insert(BB);
+      VisitStack.push_back(std::make_pair(BB, succ_begin(BB)));
+    } else {
+      // Go up one level.
+      InStack.erase(VisitStack.pop_back_val().first);
+    }
+  } while (!VisitStack.empty());
+}
+
+void BasicBlocksDemo::LoopConstruction(SmallVectorImpl<std::pair<const BasicBlock*,const BasicBlock*>> &BackEdgesSet,std::vector<std::vector<const BasicBlock *>> &LoopSet){
+    std::vector<const BasicBlock *> Stack;
+    for (unsigned i = 0, e = BackEdgesSet.size(); i != e; ++i){
+          LoopSet[i].push_back(BackEdgesSet[i].second);
+	  //errs() << llvm::BlockAddress::get(const_cast<BasicBlock*>(LoopSet[i].back()))<<"\n";
+	  if(std::find(LoopSet[i].begin(),LoopSet[i].end(),BackEdgesSet[i].first)==LoopSet[i].end()){
+	      LoopSet[i].push_back(BackEdgesSet[i].first);
+	      Stack.push_back(BackEdgesSet[i].first);
+	      //errs() << llvm::BlockAddress::get(const_cast<BasicBlock*>(Stack.back()))<<"\n";
+	  }
+	  while(!Stack.empty()){
+	      
+	    const BasicBlock *temp = Stack.back();
+	    Stack.pop_back();
+	    for (const_pred_iterator PI = pred_begin(temp), E = pred_end(temp); PI != E; ++PI) {
+	      const BasicBlock *P = *PI;
+	      
+	      if(std::find(LoopSet[i].begin(),LoopSet[i].end(),P)==LoopSet[i].end()){
+		LoopSet[i].push_back(P);
+		Stack.push_back(P);
+	      }
+	    }
+	  } 
+  }
+}
 
 
-	void FindFunctionBackEdges(const Function &F,
-		 SmallVectorImpl<std::pair<const BasicBlock*,const BasicBlock*>> &Result) {
-	  const BasicBlock *BB = &F.getEntryBlock();
-	  if (succ_empty(BB))
-		return;
-
-	  SmallPtrSet<const BasicBlock*, 8> Visited;
-	  SmallVector<std::pair<const BasicBlock*, succ_const_iterator>, 8> VisitStack;
-	  SmallPtrSet<const BasicBlock*, 8> InStack;
-
-	  Visited.insert(BB);
-	  VisitStack.push_back(std::make_pair(BB, succ_begin(BB)));
-	  InStack.insert(BB);
-	  do {
-		std::pair<const BasicBlock*, succ_const_iterator> &Top = VisitStack.back();
-		const BasicBlock *ParentBB = Top.first;
-		succ_const_iterator &I = Top.second;
-
-		bool FoundNew = false;
-		while (I != succ_end(ParentBB)) {
-		  BB = *I++;
-		  if (Visited.insert(BB).second) {
-			FoundNew = true;
-			break;
-		  }
-		  // Successor is in VisitStack, it's a back edge.
-		  if (InStack.count(BB))
-			Result.push_back(std::make_pair(ParentBB, BB));
-		}
-
-		if (FoundNew) {
-		  // Go down one level if there is a unvisited successor.
-		  InStack.insert(BB);
-		  VisitStack.push_back(std::make_pair(BB, succ_begin(BB)));
-		} else {
-		  // Go up one level.
-		  InStack.erase(VisitStack.pop_back_val().first);
-		}
-	  } while (!VisitStack.empty());
-	}
-	
-	//input: start and end blocks of a loop
-	void computeEdgeWeights(BasicBlock* start, BasicBlock* end, std::unordered_map<std::pair<BasicBlock*,BasicBlock*>,int> &edges){
-		std::unordered_map<BasicBlock*,int> numpaths;
-		std::pair<BasicBlock*,BasicBlock*> edge;
-		//iterate in reverse of a loop
-		for (pred_iterator PI = pred_begin(end), e = pred_end(start); PI!=e;++PI){
-			BasicBlock *pred = *PI;
-			if(pred == end){
-				numpaths[pred] = 1;
-			}
-			else{
-				numpaths[pred] = 0;
-				//computing edge weights from pred -> sucessors
-				for(succ_iterator SI = succ_begin(pred), e = succ_end(pred); SI!=e;++SI){
-					BasicBlock * suc = *SI;
-					edge = std::make_pair(pred,suc);
-					//edges.insert(edge,numpaths[pred]);
-					edges.insert(std::make_pair(pred,suc),numpaths[pred]);
-					numpaths[pred] += numpaths[suc];
-				}
-			}
-		}	
+void BasicBlocksDemo::Innermost_Loop(std::vector<std::vector<const BasicBlock *>> &Loopset){
+	for(unsigned long i = 0; i < Loopset.size()-1;){
+	    const BasicBlock* p = *(Loopset[i].begin());
+	    if(std::find(Loopset[i+1].begin(),Loopset[i+1].end(),p)!=Loopset[i+1].end()){
+		Loopset.erase(Loopset.begin()+1);
+	    }
+	    else if(p == *(Loopset[i+1].end()))
+		Loopset.erase(Loopset.begin()+1);
+	    else
+		++i;
 	}
 }
 
+//input: start and end blocks of a loop
+void BasicBlocksDemo::computeEdgeWeights(std::vector<std::vector<const BasicBlock *>> Loopset, std::map<std::pair<const BasicBlock*,const BasicBlock*>,int> &edges){
+		std::map<std::string,int> numpaths;
+		//iterate in reverse of a loop
+		//for (pred_iterator PI = pred_begin(end), e = pred_end(start); PI!=e;++PI){
+		for(std::vector<std::vector<const BasicBlock*>>::iterator it = Loopset.begin();it!=Loopset.end();++it){
+			int count = 0;
+			const BasicBlock * start = *(*it).begin();
+			for (std::vector<const BasicBlock*>::iterator iit = (*it).begin();iit!=(*it).end();++iit){
+				const BasicBlock * node = *iit;
+				if(count == 0){
+					//node is start
+					//start = iit;
+				}
+				else if(count == 1){
+					//2nd node which is end
+					numpaths[node->getName()] = 0;
+				}
+				else{
+					numpaths[node->getName()] =0;
+					for(const_succ_iterator SI = succ_begin(node), e = succ_end(node);SI!=e;++SI){
+						BasicBlock * suc = *SI;
+						std::pair <const BasicBlock*,const BasicBlock*> edge (node,suc);
+						edges.insert(edges.begin(),{edge,numpaths[node->getName()]});
+						//edges.insert(std::make_pair(iit,suc),numpaths[iit]);
+						numpaths[node->getName()] += numpaths[suc->getName()];
+					}
+				}
+				count++;
+			}
+			numpaths[start->getName()] = 0;
+			for(const_succ_iterator SI = succ_begin(start), e = succ_end(start);SI!=e;++SI){
+				BasicBlock * suc = *SI;
+				std::pair <const BasicBlock*,const BasicBlock*> edge (start,suc);
+				edges.insert(edges.begin(),{edge,numpaths[start->getName()]});
+				numpaths[start->getName()] += numpaths[suc->getName()];
+			}
+		}	
+	}
  
 char BasicBlocksDemo::ID = 0;
 static RegisterPass<BasicBlocksDemo> X("bbdemo", "BasicBlocksDemo Pass", false, false);
