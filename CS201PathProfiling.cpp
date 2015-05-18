@@ -43,7 +43,7 @@ namespace {
 		void FindFunctionBackEdges(const Function &F, SmallVectorImpl<std::pair<const BasicBlock*,const BasicBlock*>> &Result);
 		void LoopConstruction(SmallVectorImpl<std::pair<const BasicBlock*,const BasicBlock*>> &BackEdgesSet,std::vector<std::vector<const BasicBlock *>> &LoopSet);
 		void Innermost_Loop(std::vector<std::vector<const BasicBlock *>> &Loopset);
-		void computeEdgeWeights(std::vector<std::vector<const BasicBlock *>> Loopset, std::map<std::pair<const BasicBlock*,const BasicBlock*>,int> &edges);
+		void computeEdgeWeights(std::vector<std::vector<const BasicBlock *>> &Loopset, std::map<std::pair<const BasicBlock*,const BasicBlock*>,int> &edges);
 		bool doInitialization(Module &M) {
 			errs() << "\n---------Starting BasicBlockDemo---------\n";
 			Context = &M.getContext();
@@ -85,6 +85,9 @@ namespace {
 
 		if(!LoopSet.empty())
 			Innermost_Loop(LoopSet);
+		
+		std::map<std::pair<const BasicBlock*,const BasicBlock*>,int> edges;
+		computeEdgeWeights(LoopSet, edges);
 
 		for (unsigned i = 0, e = LoopSet.size(); i != e; ++i){
 			errs() << "Innermost Loop:";
@@ -237,14 +240,14 @@ void BasicBlocksDemo::Innermost_Loop(std::vector<std::vector<const BasicBlock *>
 	}
 }
 
-//input: start and end blocks of a loop
-void BasicBlocksDemo::computeEdgeWeights(std::vector<std::vector<const BasicBlock *>> Loopset, std::map<std::pair<const BasicBlock*,const BasicBlock*>,int> &edges){
-		std::map<std::string,int> numpaths;
+//input: vector of loop vectors, and edge map
+void BasicBlocksDemo::computeEdgeWeights(std::vector<std::vector<const BasicBlock*>> &Loopset, std::map<std::pair<const BasicBlock*,const BasicBlock*>,int> &edges){
+		std::map<const BasicBlock*,int> numpaths;
 		//iterate in reverse of a loop
 		//for (pred_iterator PI = pred_begin(end), e = pred_end(start); PI!=e;++PI){
 		for(std::vector<std::vector<const BasicBlock*>>::iterator it = Loopset.begin();it!=Loopset.end();++it){
 			int count = 0;
-			const BasicBlock* start;
+			const BasicBlock *start;
 			for (std::vector<const BasicBlock*>::iterator iit = (*it).begin();iit!=(*it).end();++iit){
 				const BasicBlock * node = *iit;
 				if(count == 0){
@@ -253,29 +256,36 @@ void BasicBlocksDemo::computeEdgeWeights(std::vector<std::vector<const BasicBloc
 				}
 				else if(count == 1){
 					//2nd node which is end
-					numpaths[node->getName()] = 0;
+					numpaths[node] = 1;
 				}
 				else{
-					numpaths[node->getName()] =0;
-					for(const_succ_iterator SI = succ_begin(node), e = succ_end(node);SI!=e;++SI){
-						BasicBlock * suc = *SI;
+					numpaths[node] =0;
+					for(succ_const_iterator SI = succ_begin(node), e = succ_end(node);SI!=e;++SI){
+						const BasicBlock * suc = *SI;
 						std::pair <const BasicBlock*,const BasicBlock*> edge (node,suc);
-						edges.insert(edges.begin(),{edge,numpaths[node->getName()]});
+						edges.insert(edges.begin(),{edge,numpaths[node]});
+						errs() << "edge: ";
+						errs() << llvm::BlockAddress::get(const_cast<BasicBlock*> (node));
+						errs() << " to ";
+						errs() << llvm::BlockAddress::get(const_cast<BasicBlock*> (suc));
+						errs() << " wegith ";
+						errs() << numpaths[node];
+						errs() << "\n";
 						//edges.insert(std::make_pair(iit,suc),numpaths[iit]);
-						numpaths[node->getName()] += numpaths[suc->getName()];
+						numpaths[node] += numpaths[suc];
 					}
 				}
 				count++;
 			}
-			numpaths[start->getName()] = 0;
-			for(const_succ_iterator SI = succ_begin(start), e = succ_end(start);SI!=e;++SI){
+			numpaths[start] = 0;
+			for(succ_const_iterator SI = succ_begin(start), e = succ_end(start);SI!=e;++SI){
 				const BasicBlock* suc = *SI;
 				std::pair <const BasicBlock*,const BasicBlock*> edge (start,suc);
-				edges.insert(edges.begin(),{edge,numpaths[start->getName()]});
-				numpaths[start->getName()] += numpaths[suc->getName()];
+				edges.insert(edges.begin(),{edge,numpaths[start]});
+				numpaths[start] += numpaths[suc];
 			}
 		}	
 	}
  
 char BasicBlocksDemo::ID = 0;
-static RegisterPass<BasicBlocksDemo> X("bbdemo", "BasicBlocksDemo Pass", false, false);
+static RegisterPass<BasicBlocksDemo> X("pathProfiling", "BasicBlocksDemo Pass", false, false);
