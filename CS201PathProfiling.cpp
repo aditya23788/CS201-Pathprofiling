@@ -264,6 +264,7 @@ void BasicBlocksDemo::computeEdgeWeights(std::vector<std::vector<const BasicBloc
 						const BasicBlock * suc = *SI;
 						std::pair <const BasicBlock*,const BasicBlock*> edge (node,suc);
 						edges.insert(edges.begin(),{edge,numpaths[node]});
+						//printing
 						errs() << "edge: ";
 						errs() << llvm::BlockAddress::get(const_cast<BasicBlock*> (node));
 						errs() << " to ";
@@ -282,6 +283,14 @@ void BasicBlocksDemo::computeEdgeWeights(std::vector<std::vector<const BasicBloc
 				const BasicBlock* suc = *SI;
 				std::pair <const BasicBlock*,const BasicBlock*> edge (start,suc);
 				edges.insert(edges.begin(),{edge,numpaths[start]});
+				//printing
+				errs() << "edge: ";
+				errs() << llvm::BlockAddress::get(const_cast<BasicBlock*> (start));
+				errs() << " to ";
+				errs() << llvm::BlockAddress::get(const_cast<BasicBlock*> (suc));
+				errs() << " wegith ";
+				errs() << numpaths[start];
+				errs() << "\n";
 				numpaths[start] += numpaths[suc];
 			}
 		}	
