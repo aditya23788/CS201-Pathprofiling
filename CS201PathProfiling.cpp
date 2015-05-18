@@ -281,17 +281,24 @@ void BasicBlocksDemo::computeEdgeWeights(std::vector<std::vector<const BasicBloc
 			numpaths[start] = 0;
 			for(succ_const_iterator SI = succ_begin(start), e = succ_end(start);SI!=e;++SI){
 				const BasicBlock* suc = *SI;
-				std::pair <const BasicBlock*,const BasicBlock*> edge (start,suc);
-				edges.insert(edges.begin(),{edge,numpaths[start]});
-				//printing
-				errs() << "edge: ";
-				errs() << llvm::BlockAddress::get(const_cast<BasicBlock*> (start));
-				errs() << " to ";
-				errs() << llvm::BlockAddress::get(const_cast<BasicBlock*> (suc));
-				errs() << " wegith ";
-				errs() << numpaths[start];
-				errs() << "\n";
-				numpaths[start] += numpaths[suc];
+				std::vector<const BasicBlock*>::iterator it1;
+				it1 = find((*it).begin(),(*it).end(),suc);
+				if(it1 != (*it).end()){
+					std::pair <const BasicBlock*,const BasicBlock*> edge (start,suc);
+					edges.insert(edges.begin(),{edge,numpaths[start]});
+					//printing
+					errs() << "edge: ";
+					errs() << llvm::BlockAddress::get(const_cast<BasicBlock*> (start));
+					errs() << " to ";
+					errs() << llvm::BlockAddress::get(const_cast<BasicBlock*> (suc));
+					errs() << " wegith ";
+					errs() << numpaths[start];
+					errs() << "\n";
+					numpaths[start] += numpaths[suc];
+				}
+				else{
+					//errs() << "an edge outside of loop\n";
+				}
 			}
 		}	
 	}
