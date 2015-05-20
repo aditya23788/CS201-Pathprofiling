@@ -43,7 +43,7 @@ namespace {
 		void FindFunctionBackEdges(const Function &F, SmallVectorImpl<std::pair<const BasicBlock*,const BasicBlock*>> &Result);
 		void LoopConstruction(SmallVectorImpl<std::pair<const BasicBlock*,const BasicBlock*>> &BackEdgesSet,std::vector<std::vector<const BasicBlock *>> &LoopSet);
 		void Innermost_Loop(std::vector<std::vector<const BasicBlock *>> &Loopset);
-		void computeEdgeWeights(std::vector<std::vector<const BasicBlock *>> &Loopset, std::map<std::pair<const BasicBlock*,const BasicBlock*>,int> &edges);
+		void computeEdgeWeights(std::vector<std::vector<const BasicBlock *>> &Loopset, std::map<std::pair<const BasicBlock*,const BasicBlock*>,int> &edges, std::vector<int> &retpaths);
 		bool doInitialization(Module &M) {
 			errs() << "\n---------Starting BasicBlockDemo---------\n";
 			Context = &M.getContext();
@@ -83,11 +83,14 @@ namespace {
 			errs() << "\n";
 		}
 
-		if(!LoopSet.empty())
+		if(!LoopSet.empty()){
 			Innermost_Loop(LoopSet);
 		
-		std::map<std::pair<const BasicBlock*,const BasicBlock*>,int> edges;
-		computeEdgeWeights(LoopSet, edges);
+			std::map<std::pair<const BasicBlock*,const BasicBlock*>,int> edges;
+			std::vector<int> retpaths;
+			computeEdgeWeights(LoopSet, edges, retpaths);
+			errs() << "num paths " << retpaths[0] << "\n";
+		}
 
 		for (unsigned i = 0, e = LoopSet.size(); i != e; ++i){
 			errs() << "Innermost Loop:";
@@ -241,7 +244,7 @@ void BasicBlocksDemo::Innermost_Loop(std::vector<std::vector<const BasicBlock *>
 }
 
 //input: vector of loop vectors, and edge map
-void BasicBlocksDemo::computeEdgeWeights(std::vector<std::vector<const BasicBlock*>> &Loopset, std::map<std::pair<const BasicBlock*,const BasicBlock*>,int> &edges){
+void BasicBlocksDemo::computeEdgeWeights(std::vector<std::vector<const BasicBlock*>> &Loopset, std::map<std::pair<const BasicBlock*,const BasicBlock*>,int> &edges,std::vector<int> &retpaths){
 		std::map<const BasicBlock*,int> numpaths;
 		//iterate in reverse of a loop
 		//for (pred_iterator PI = pred_begin(end), e = pred_end(start); PI!=e;++PI){
@@ -300,6 +303,7 @@ void BasicBlocksDemo::computeEdgeWeights(std::vector<std::vector<const BasicBloc
 					//errs() << "an edge outside of loop\n";
 				}
 			}
+			retpaths.push_back(numpaths[start]);
 		}	
 	}
  
