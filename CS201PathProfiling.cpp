@@ -39,6 +39,7 @@ namespace {
 		BasicBlocksDemo() : FunctionPass(ID) {}
 		GlobalVariable *bbCounter = NULL;
 		GlobalVariable *BasicBlockPrintfFormatStr = NULL;
+		GlobalVariable *pathctr = NULL;
 		Function *printf_func = NULL;
 
 		//----------------------------------
@@ -48,6 +49,10 @@ namespace {
 		void computeEdgeWeights(std::vector<std::vector<const BasicBlock *>> &Loopset, std::map<std::pair<const BasicBlock*,const BasicBlock*>,int> &edges, std::vector<int> &retpaths);
 		void Initcounter(std::vector<std::vector<const BasicBlock *>> &Loopset);
 		void InsertBasicBlock(std::vector<std::vector<const BasicBlock*>> &Loopset, std::map<std::pair<const BasicBlock*,const BasicBlock*>,int> &edges, Function &F);
+		void updateArray(BasicBlock* bb,unsigned loopnum, int loopsize);
+		void addtoEnd(std::vector<std::vector<const BasicBlock*>> &Loopset,std::vector<int> retpaths);
+
+
 		bool doInitialization(Module &M) {
 			errs() << "\n---------Starting BasicBlockDemo---------\n";
 			Context = &M.getContext();
@@ -91,17 +96,38 @@ namespace {
 		    //for(auto &I: BB)
 			errs() << llvm::BlockAddress::get(const_cast<BasicBlock*>(&BB))<<"\n"<< BB << "\n";*/
 
+		std::vector<int> retpaths;
 
 		if(!LoopSet.empty()){
 			Innermost_Loop(LoopSet);
 		
 			std::map<std::pair<const BasicBlock*,const BasicBlock*>,int> edges;
-			std::vector<int> retpaths;
 			computeEdgeWeights(LoopSet, edges, retpaths);
 			errs() << "num paths " << retpaths[0] << "\n";
 			Initcounter(LoopSet);
 			InsertBasicBlock(LoopSet, edges, F);
+
+		int totalpaths = 0;
+        for(unsigned int i = 0;i< retpaths.size();i++)
+            totalpaths+= retpaths[i];
+
+        ArrayType* arrtype = ArrayType::get(Type::getInt32Ty(*Context),
+                                   totalpaths);
+        pathctr = new GlobalVariable(arrtype,
+                        false,
+                        GlobalValue::ExternalLinkage,
+                        Constant::getNullValue(arrtype),
+                        "pathctr");
+        pathctr->setAlignment(16);
+        ConstantAggregateZero* const_arr_2 = ConstantAggregateZero::get(arrtype);
+        pathctr->setInitializer(const_arr_2);
+		addtoEnd(LoopSet,retpaths);
 		}
+
+//Type::getInt32Ty(*Context), false, GlobalValue::InternalLinkage,
+//					ConstantArray::get(ArrayType::get(Type::getInt32Ty(*Context),totalpaths),llvm::ArrayRef<llvm::Constant*>() ));
+		
+			
 
 		for (unsigned i = 0, e = LoopSet.size(); i != e; ++i){
 			errs() << "Innermost Loop:";
@@ -295,11 +321,15 @@ void BasicBlocksDemo::computeEdgeWeights(std::vector<std::vector<const BasicBloc
 					errs() << numpaths[start];
 					errs() << "\n";
 					numpaths[start] += numpaths[suc];
+					
 				}
 				else{
 					//errs() << "an edge outside of loop\n";
 				}
+				
 			}
+			
+			
 			retpaths.push_back(numpaths[start]);
 		}	
 	}
@@ -354,6 +384,46 @@ void BasicBlocksDemo::InsertBasicBlock(std::vector<std::vector<const BasicBlock*
     
     }
     
+}
+
+void BasicBlocksDemo::updateArray(BasicBlock *bb, unsigned loopnum,int loopsize)
+{
+	IRBuilder<> IRB(bb->getFirstInsertionPt());
+	Value *inc = IRB.CreateLoad(bbCounter);
+//	errs() << "incValue value " <<inc <<"\n";
+	//Value *pathAddr = IRB.CreateLoad(pathctr);
+//	errs() << "after pathaddr "<<pathAddr<<"\n";
+	Value* idxValue = IRB.CreateAdd(ConstantInt::get(Type::getInt32Ty(*Context),loopnum * loopsize),inc);
+	//test
+	std::vector<Value*> gepIndices(2);
+    gepIndices[0] = Constant::getNullValue(Type::getInt32Ty(*Context));
+    gepIndices[1] = idxValue;
+	GetElementPtrInst* pcpointer = GetElementPtrInst::Create(pathctr,gepIndices,"pcptr",bb->getFirstInsertionPt());
+	//load from array
+	LoadInst* oldpc = new LoadInst(pcpointer,"oldpc");
+	//add 
+	Value* one = ConstantInt::get(Type::getInt32Ty(*Context),1);
+	//BinaryOperator* newpc = BinaryOperator::Create(Instruction::Add,oldpc,one,"newpc",bb->getFirstInsertionPt());
+	Value* newpc = IRB.CreateAdd(ConstantInt::get(Type::getInt32Ty(*Context),1),oldpc);
+	//store
+	new StoreInst(newpc,pcpointer);
+	//end test
+	
+	//Value *pathCtr = IRB.CreateExtractElement(pathAddr, loadAddr);
+	//errs() << "before pathupdate";
+	//Value *pathUpdateValue = IRB.CreateAdd(ConstantInt::get(Type::getInt32Ty(*Context), 1),pathCtr);
+	//IRB.CreateInsertElement(pathAddr,pathUpdateValue,loadAddr);
+	//errs() << "pathvalue" <<"\n";
+	}
+void BasicBlocksDemo::addtoEnd(std::vector<std::vector<const BasicBlock*>> &Loopset,std::vector<int> retpaths){
+	errs() <<"addtoend\n";
+	for (unsigned i = 0, e = Loopset.size(); i != e; ++i){
+//TODO
+
+		updateArray(const_cast<BasicBlock*>(Loopset[i][1]),i,retpaths[i]);
+//	    IRBuilder<> IRB(const_cast<BasicBlock *>(Loopset[i][1])->getFirstInsertionPt());
+//	    errs()<< *(Loopset[i][0]) << "\n";
+    }
 }
  
 char BasicBlocksDemo::ID = 0;
