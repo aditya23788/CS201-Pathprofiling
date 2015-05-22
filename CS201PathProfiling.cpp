@@ -7,6 +7,8 @@
 #include "llvm/IR/Type.h"
 #include "llvm/Analysis/CFG.h"
 #include "llvm/ADT/SmallSet.h"
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
+
 
 #include <map>
 #include <algorithm>
@@ -44,6 +46,8 @@ namespace {
 		void LoopConstruction(SmallVectorImpl<std::pair<const BasicBlock*,const BasicBlock*>> &BackEdgesSet,std::vector<std::vector<const BasicBlock *>> &LoopSet);
 		void Innermost_Loop(std::vector<std::vector<const BasicBlock *>> &Loopset);
 		void computeEdgeWeights(std::vector<std::vector<const BasicBlock *>> &Loopset, std::map<std::pair<const BasicBlock*,const BasicBlock*>,int> &edges, std::vector<int> &retpaths);
+		void Initcounter(std::vector<std::vector<const BasicBlock *>> &Loopset);
+		void InsertBasicBlock(std::vector<std::vector<const BasicBlock*>> &Loopset, std::map<std::pair<const BasicBlock*,const BasicBlock*>,int> &edges, Function &F);
 		bool doInitialization(Module &M) {
 			errs() << "\n---------Starting BasicBlockDemo---------\n";
 			Context = &M.getContext();
@@ -82,6 +86,11 @@ namespace {
 		  }
 			errs() << "\n";
 		}
+		/*
+		for(auto &BB: F) 
+		    //for(auto &I: BB)
+			errs() << llvm::BlockAddress::get(const_cast<BasicBlock*>(&BB))<<"\n"<< BB << "\n";*/
+
 
 		if(!LoopSet.empty()){
 			Innermost_Loop(LoopSet);
@@ -90,6 +99,8 @@ namespace {
 			std::vector<int> retpaths;
 			computeEdgeWeights(LoopSet, edges, retpaths);
 			errs() << "num paths " << retpaths[0] << "\n";
+			Initcounter(LoopSet);
+			InsertBasicBlock(LoopSet, edges, F);
 		}
 
 		for (unsigned i = 0, e = LoopSet.size(); i != e; ++i){
@@ -100,41 +111,27 @@ namespace {
 			errs() << "\n";
 		}
 
-		for(auto &BB: F) {
+		//for(auto &BB: F) {
 		// Add the footer to Main's BB containing the return 0; statement BEFORE calling runOnBasicBlock
-		if(F.getName().equals("main") && isa<ReturnInst>(BB.getTerminator())) { // major hack?
+		/*if(F.getName().equals("main") && isa<ReturnInst>(BB.getTerminator())) { // major hack?
 		addFinalPrintf(BB, Context, bbCounter, BasicBlockPrintfFormatStr, printf_func);
-		}
-		runOnBasicBlock(BB);
-		}
+		}*/
+		//runOnBasicBlock(BB);
+		//}
 		 
 		return true; // since runOnBasicBlock has modified the program
 		}
 		 
 		//----------------------------------
 		bool runOnBasicBlock(BasicBlock &BB) {
-		errs() << "BasicBlock: " << BB.getName()<< llvm::BlockAddress::get(&BB) << '\n';
-		//compute dominator info per basic block
-		//find all the loops
-		//find the innermost loop
-		if (BB.hasName()) {              // Print out the label if it exists...
-			errs() << "\n";
-			errs() << BB.getName();
-			errs() << ':';
-		  } /*else if (!BB.use_empty()) {      // Don't print block # of no uses...
-			errs() << "\n; <label>:";
-			int Slot = Machine.getLocalSlot(&BB);
-			if (Slot != -1)
-			  errs() << Slot;
-			else
-			  errs() << "<badref>";
-		  }*/
+		
+		/*
 		IRBuilder<> IRB(BB.getFirstInsertionPt()); // Will insert the generated instructions BEFORE the first BB instruction
 		 
 		Value *loadAddr = IRB.CreateLoad(bbCounter);
 		Value *addAddr = IRB.CreateAdd(ConstantInt::get(Type::getInt32Ty(*Context), 1), loadAddr);
 		IRB.CreateStore(addAddr, bbCounter);
-		 
+		*/
 		for(auto &I: BB)
 		errs() << I << "\n";
 
@@ -147,7 +144,7 @@ namespace {
 		//----------------------------------
 		// Rest of this code is needed to: printf("%d\n", bbCounter); to the end of main, just BEFORE the return statement
 		// For this, prepare the SCCGraph, and append to last BB?
-		void addFinalPrintf(BasicBlock& BB, LLVMContext *Context, GlobalVariable *bbCounter, GlobalVariable *var, Function *printf_func) {
+		/*void addFinalPrintf(BasicBlock& BB, LLVMContext *Context, GlobalVariable *bbCounter, GlobalVariable *var, Function *printf_func) {
 		IRBuilder<> builder(BB.getTerminator()); // Insert BEFORE the final statement
 		std::vector<Constant*> indices;
 		Constant *zero = Constant::getNullValue(IntegerType::getInt32Ty(*Context));
@@ -158,7 +155,7 @@ namespace {
 		Value *bbc = builder.CreateLoad(bbCounter);
 		CallInst *call = builder.CreateCall2(printf_func, var_ref, bbc);
 		call->setTailCall(false);
-		}
+		}*/
 		};
 	}
 
@@ -306,6 +303,58 @@ void BasicBlocksDemo::computeEdgeWeights(std::vector<std::vector<const BasicBloc
 			retpaths.push_back(numpaths[start]);
 		}	
 	}
+
+void BasicBlocksDemo::Initcounter(std::vector<std::vector<const BasicBlock*>> &Loopset){
+    for (unsigned i = 0, e = Loopset.size(); i != e; ++i){
+	IRBuilder<> IRB(const_cast<BasicBlock *>(Loopset[i][0])->getFirstInsertionPt());
+	Value *addAddr = IRB.CreateAdd(ConstantInt::get(Type::getInt32Ty(*Context), 0), ConstantInt::get(Type::getInt32Ty(*Context), 0));
+	IRB.CreateStore(addAddr, bbCounter);
+	errs()<< *(Loopset[i][0]) << "\n";
+    }
+	
+}
+	
+void BasicBlocksDemo::InsertBasicBlock(std::vector<std::vector<const BasicBlock*>> &Loopset, std::map<std::pair<const BasicBlock*,const BasicBlock*>,int> &edges, Function &F){
+    
+    for(auto &I : edges){
+	std::pair<const BasicBlock*,const BasicBlock*> BBpair = I.first;
+	errs() << llvm::BlockAddress::get(const_cast<BasicBlock*> (BBpair.first))<< " to " << llvm::BlockAddress::get(const_cast<BasicBlock*> (BBpair.second))<<"\n";
+	int edge = I.second;
+	errs() << "Before temp"<< "\n";
+	//const BasicBlock* temp = llvm::SplitEdge(const_cast<BasicBlock*>(BBpair.first), const_cast<BasicBlock*>(BBpair.second), this);
+	BasicBlock* temp = llvm::BasicBlock::Create(*Context,"",const_cast<BasicBlock *>(BBpair.second)->getParent() ,const_cast<BasicBlock *>(BBpair.second));
+	
+	
+	TerminatorInst *PredTerm = const_cast<TerminatorInst *>(BBpair.first->getTerminator());
+	for (unsigned i = 0, e = PredTerm->getNumSuccessors(); i != e; ++i)
+	    if (PredTerm->getSuccessor(i) == BBpair.second) {
+		const_cast<BasicBlock *>(BBpair.second)->removePredecessor(const_cast<BasicBlock *>(BBpair.first), true);
+		const_cast<TerminatorInst *>(PredTerm)->setSuccessor(i,const_cast<BasicBlock *>(temp));
+	    }
+	    
+	//BasicBlock* assign = const_cast<BasicBlock*>(BBpair.second);
+	IRBuilder<> IRB(temp); // Will insert the generated instructions BEFORE the first BB instruction
+		 
+	Value *loadAddr = IRB.CreateLoad(bbCounter);
+	Value *addAddr = IRB.CreateAdd(ConstantInt::get(Type::getInt32Ty(*Context), edge), loadAddr);
+	IRB.CreateStore(addAddr, bbCounter);
+	IRB.CreateBr(const_cast<BasicBlock *>(BBpair.second));
+	
+	errs() << *temp << "\n";
+	/*for(auto &BB: F) 
+	    errs() << llvm::BlockAddress::get(const_cast<BasicBlock*>(&BB))<<"\n"<< BB << "\n";*/
+	
+	
+	/*BasicBlock* assign = const_cast<BasicBlock*>(BBpair.second);
+	IRBuilder<> IRB(assign->getFirstInsertionPt()); // Will insert the generated instructions BEFORE the first BB instruction
+		 
+	Value *loadAddr = IRB.CreateLoad(bbCounter);
+	Value *addAddr = IRB.CreateAdd(ConstantInt::get(Type::getInt32Ty(*Context), edge), loadAddr);
+	IRB.CreateStore(addAddr, bbCounter);*/
+    
+    }
+    
+}
  
 char BasicBlocksDemo::ID = 0;
 static RegisterPass<BasicBlocksDemo> X("pathProfiling", "BasicBlocksDemo Pass", false, false);
