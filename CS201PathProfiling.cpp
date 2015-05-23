@@ -8,7 +8,7 @@
 #include "llvm/Analysis/CFG.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
-
+#include <sstream>
 
 #include <map>
 #include <algorithm>
@@ -57,10 +57,10 @@ namespace {
 			errs() << "\n---------Starting BasicBlockDemo---------\n";
 			Context = &M.getContext();
 			bbCounter = new GlobalVariable(M, Type::getInt32Ty(*Context), false, GlobalValue::InternalLinkage, ConstantInt::get(Type::getInt32Ty(*Context), 0), "bbCounter");
-			const char *finalPrintString = "BB Count: %d\n";
-			Constant *format_const = ConstantDataArray::getString(*Context, finalPrintString);
-			BasicBlockPrintfFormatStr = new GlobalVariable(M, llvm::ArrayType::get(llvm::IntegerType::get(*Context, 8), strlen(finalPrintString)+1), true, llvm::GlobalValue::PrivateLinkage, format_const, "BasicBlockPrintfFormatStr");
-			printf_func = printf_prototype(*Context, &M);
+//			const char *finalPrintString = "BB Count: %d\n";
+//			Constant *format_const = ConstantDataArray::getString(*Context, finalPrintString);
+//			BasicBlockPrintfFormatStr = new GlobalVariable(M, llvm::ArrayType::get(llvm::IntegerType::get(*Context, 8), strlen(finalPrintString)+1), true, llvm::GlobalValue::PrivateLinkage, format_const, "BasicBlockPrintfFormatStr");
+//			printf_func = printf_prototype(*Context, &M);
 			 
 			errs() << "Module: " << M.getName() << "\n";
 			 
@@ -92,9 +92,9 @@ namespace {
 			errs() << "\n";
 		}
 		
-		for(auto &BB: F) 
+//		for(auto &BB: F) 
 		    //for(auto &I: BB)
-			errs() << llvm::BlockAddress::get(const_cast<BasicBlock*>(&BB))<<"\n"<< BB << "\n";
+//			errs() << llvm::BlockAddress::get(const_cast<BasicBlock*>(&BB))<<"\n"<< BB << "\n";
 
 
 		std::vector<int> retpaths;
@@ -124,11 +124,20 @@ namespace {
         ConstantAggregateZero* const_arr_2 = ConstantAggregateZero::get(arrtype);
         pathctr->setInitializer(const_arr_2);
 		addtoEnd(LoopSet,retpaths);
+
+		for(auto &BB: F) {
+		// Add the footer to Main's BB containing the return 0; statement BEFORE calling runOnBasicBlock
+		if(isa<ReturnInst>(BB.getTerminator())) { // major hack?
+		addFinalPrintf(BB, Context, printf_func,LoopSet,retpaths);
+		}
+		//runOnBasicBlock(BB);
+		}
+
 		}
 
 		for(auto &BB: F)
             //for(auto &I: BB)
-            errs() << llvm::BlockAddress::get(const_cast<BasicBlock*>(&BB))<<"\n"<< BB << "\n";
+            errs() << llvm::BlockAddress::get(const_cast<BasicBlock*>(&BB))<< "\n";
 
 //Type::getInt32Ty(*Context), false, GlobalValue::InternalLinkage,
 //					ConstantArray::get(ArrayType::get(Type::getInt32Ty(*Context),totalpaths),llvm::ArrayRef<llvm::Constant*>() ));
@@ -143,74 +152,68 @@ namespace {
 			errs() << "\n";
 		}
 
-		for(auto &BB: F) {
-		// Add the footer to Main's BB containing the return 0; statement BEFORE calling runOnBasicBlock
-		if(F.getName().equals("main") && isa<ReturnInst>(BB.getTerminator())) { // major hack?
-		addFinalPrintf(BB, Context, bbCounter, BasicBlockPrintfFormatStr, printf_func);
-		}
-		//runOnBasicBlock(BB);
-		}
 		 
 		return true; // since runOnBasicBlock has modified the program
 		}
 		 
 		//----------------------------------
-		bool runOnBasicBlock(BasicBlock &BB) {
-		
-		/*
-		IRBuilder<> IRB(BB.getFirstInsertionPt()); // Will insert the generated instructions BEFORE the first BB instruction
-		 
-		Value *loadAddr = IRB.CreateLoad(bbCounter);
-		Value *addAddr = IRB.CreateAdd(ConstantInt::get(Type::getInt32Ty(*Context), 1), loadAddr);
-		IRB.CreateStore(addAddr, bbCounter);
-		*/
-		for(auto &I: BB)
-		errs() << I << "\n";
-
-		//edge_assign(set of loops)
-		//path_profile(set of loops)
-		 
-		return true;
-		}
-		 
-		//----------------------------------
 		// Rest of this code is needed to: printf("%d\n", bbCounter); to the end of main, just BEFORE the return statement
 		// For this, prepare the SCCGraph, and append to last BB?
-		void addFinalPrintf(BasicBlock& BB, LLVMContext *Context, GlobalVariable *bbCounter, GlobalVariable *var, Function *printf_func) {
+		void addFinalPrintf(BasicBlock& BB, LLVMContext *Context, /*GlobalVariable *var,*/ Function *printf_func,std::vector<std::vector<const BasicBlock *>> &LoopSet,std::vector<int> &retpaths) {
 		IRBuilder<> IRB(BB.getTerminator()); // Insert BEFORE the final statement
-/*
-		std::vector<Constant*> indices;
-		Constant *zero = Constant::getNullValue(IntegerType::getInt32Ty(*Context));
-		indices.push_back(zero);
-		indices.push_back(zero);
-		Constant *var_ref = ConstantExpr::getGetElementPtr(var, indices);
-		 
-		Value *bbc = builder.CreateLoad(bbCounter);
-		CallInst *call = builder.CreateCall2(printf_func, var_ref, bbc);
-		call->setTailCall(false);
-*/
-	errs() << "inside addfinalprint\n";
-    Value *inc = IRB.CreateLoad(bbCounter);
-    Value* idxValue = IRB.CreateAdd(ConstantInt::get(Type::getInt32Ty(*Context),0 * 0),inc);
-    std::vector<Value*> gepIndices(2);
-    ConstantInt* initvalue = ConstantInt::get(*Context, APInt(32, StringRef("0"), 10));
-    gepIndices[0] = initvalue;
-    gepIndices[1] = idxValue;
-    GetElementPtrInst* pcpointer = GetElementPtrInst::Create(pathctr,gepIndices,"pcptr",BB.getTerminator());
-	errs() << "loaded array1\n";
-    //load from array
-    LoadInst* oldpc = new LoadInst(pcpointer,"oldpc",BB.getTerminator());
+		errs() << "beforeloop\n";
+		for(unsigned long i =0;i<LoopSet.size();i++){
+			errs() << "print";
+			std::stringstream s;
+			s << llvm::BlockAddress::get(const_cast<BasicBlock*>(LoopSet[i][0]));
+			errs() << "asdf "<< s.str()<<"\n";
+			//const char* finalstr = s.str().c_str();
+			std::string ss = "Path_";
+			ss.append(s.str());
+			ss.append("_");
 
-        std::vector<Constant*> indices;
-        Constant *zero = Constant::getNullValue(IntegerType::getInt32Ty(*Context));
-        indices.push_back(zero);
-        indices.push_back(zero);
-        Constant *var_ref = ConstantExpr::getGetElementPtr(var, indices);
-	errs() << "loaded array2\n";
-//		Value *bbc = IRB.CreateLoad(bbCounter);
-		CallInst *call = IRB.CreateCall2(printf_func, var_ref, oldpc);
-	errs() <<"set tail\n";
-        call->setTailCall(false);
+			//2nd for for inner loop
+			//loop over retpaths[i]
+			for(int j = 0; j<retpaths[i];j++){
+				std::string a = ss + std::to_string(j);
+//				ss.append(std::to_string(j));
+				errs() << a << "\n";
+//				finalstr = finalstr + '_'  + j;
+			 a =  a + ": %d\n";
+			errs() << a <<"\n";
+			const char *finalPrintString = a.c_str();
+            Constant *format_const = ConstantDataArray::getString(*Context, finalPrintString);
+			BasicBlockPrintfFormatStr = new GlobalVariable(*((BB.getParent())->getParent()), llvm::ArrayType::get(llvm::IntegerType::get(*Context, 8), strlen(finalPrintString)+1), true, llvm::GlobalValue::PrivateLinkage, format_const, "BasicBlockPrintfFormatStr");
+			printf_func = printf_prototype(*Context, ((BB.getParent())->getParent()));
+
+            
+
+			    Value* idxValue = IRB.CreateAdd(ConstantInt::get(Type::getInt32Ty(*Context),i * retpaths[i]),ConstantInt::get(Type::getInt32Ty(*Context),j));
+	    		std::vector<Value*> gepIndices(2);
+			    ConstantInt* initvalue = ConstantInt::get(*Context, APInt(32, StringRef("0"), 10));
+			    gepIndices[0] = initvalue;
+			    gepIndices[1] = idxValue;
+			    GetElementPtrInst* pcpointer = GetElementPtrInst::Create(pathctr,gepIndices,"pcptr",BB.getTerminator());
+				errs() << "loaded array1\n";
+	    		//load from array
+			    LoadInst* oldpc = new LoadInst(pcpointer,"oldpc",BB.getTerminator());
+
+        		std::vector<Constant*> indices;
+		        Constant *zero = Constant::getNullValue(IntegerType::getInt32Ty(*Context));
+        		indices.push_back(zero);
+		        indices.push_back(zero);
+        		Constant *var_ref = ConstantExpr::getGetElementPtr(BasicBlockPrintfFormatStr, indices);
+				errs() << "loaded array2\n";
+		//		Value *bbc = IRB.CreateLoad(bbCounter);
+				CallInst *call = IRB.CreateCall2(printf_func, var_ref, oldpc);
+				errs() <<"set tail\n";
+	    	    call->setTailCall(false);
+
+			}
+
+		}
+		 
+		
 		}
 		};
 	}
@@ -418,43 +421,22 @@ void BasicBlocksDemo::InsertBasicBlock(std::vector<std::vector<const BasicBlock*
 
 void BasicBlocksDemo::updateArray(BasicBlock *bb, unsigned loopnum,int loopsize)
 {
-	errs() << *bb;
 	IRBuilder<> IRB(bb->getTerminator());
 	Value *inc = IRB.CreateLoad(bbCounter);
-//	errs() << "incValue value " <<inc <<"\n";
-	//Value *pathAddr = IRB.CreateLoad(pathctr);
-//	errs() << "after pathaddr "<<pathAddr<<"\n";
 	Value* idxValue = IRB.CreateAdd(ConstantInt::get(Type::getInt32Ty(*Context),loopnum * loopsize),inc);
-	//test
 	std::vector<Value*> gepIndices(2);
 	ConstantInt* initvalue = ConstantInt::get(*Context, APInt(32, StringRef("0"), 10));
     gepIndices[0] = initvalue;
     gepIndices[1] = idxValue;
 	GetElementPtrInst* pcpointer = GetElementPtrInst::Create(pathctr,gepIndices,"pcptr",bb->getTerminator());
-	//load from array
 	LoadInst* oldpc = new LoadInst(pcpointer,"oldpc",bb->getTerminator());
-	//add 
-	Value* one = ConstantInt::get(Type::getInt32Ty(*Context),1);
-	//BinaryOperator* newpc = BinaryOperator::Create(Instruction::Add,oldpc,one,"newpc",bb->getTerminator());
 	Value* newpc = IRB.CreateAdd(ConstantInt::get(Type::getInt32Ty(*Context),1),oldpc);
-	//store
 	new StoreInst(newpc,pcpointer,bb->getTerminator());
-	//end test
-	
-	//Value *pathCtr = IRB.CreateExtractElement(pathAddr, loadAddr);
-	//errs() << "before pathupdate";
-	//Value *pathUpdateValue = IRB.CreateAdd(ConstantInt::get(Type::getInt32Ty(*Context), 1),pathCtr);
-	//IRB.CreateInsertElement(pathAddr,pathUpdateValue,loadAddr);
-	//errs() << "pathvalue" <<"\n";
 	}
 void BasicBlocksDemo::addtoEnd(std::vector<std::vector<const BasicBlock*>> &Loopset,std::vector<int> retpaths){
 	errs() <<"addtoend\n";
 	for (unsigned i = 0, e = Loopset.size(); i != e; ++i){
-//TODO
-
 		updateArray(const_cast<BasicBlock*>(Loopset[i][1]),i,retpaths[i]);
-//	    IRBuilder<> IRB(const_cast<BasicBlock *>(Loopset[i][1])->getFirstInsertionPt());
-//	    errs()<< *(Loopset[i][0]) << "\n";
     }
 }
  
