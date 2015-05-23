@@ -32,12 +32,9 @@ public:
   void runToposort(std::vector<std::vector<const BasicBlock *>> &Loopset,std::vector<std::vector<const BasicBlock *>> &topsortBB) {
 	for(unsigned i = 0; i < Loopset.size();++i){
 		for (unsigned m = 0, n = Loopset[i].size(); m != n; ++m){
-			    errs() << "Loopset of "<<m<<" " << llvm::BlockAddress::get(const_cast<BasicBlock*>(Loopset[i][m])) << ":\n";
 
     		  ColorMap[Loopset[i][m]] = TopoSorter::WHITE;		
 		}
-	    errs() << "Topological sort of " << Loopset[i][0] << ":\n";
-//change
 		DFSTopsort(Loopset[i][1],i,topsortBB,Loopset[i][0]);
 		      
 	}	
@@ -46,16 +43,12 @@ public:
   std::vector<const BasicBlock *> Stack;  
 	void DFSTopsort(const BasicBlock* BB, int i, std::vector<std::vector<const BasicBlock *>> &topsortBB,const BasicBlock* end){
 		ColorMap[BB] = TopoSorter::BLACK;
-		errs() << "between\n";
 		topsortBB[i].push_back(BB);
 		//push bb pred on stack
-		errs() << "loop pred entry node\n";
 		for (const_pred_iterator PI = pred_begin(BB), E = pred_end(BB); PI != E; ++PI) {
           const BasicBlock *P = *PI;
-		  errs() << llvm::BlockAddress::get(const_cast<BasicBlock*>(P))<<"\n";
           Stack.push_back(P);
         }
-		errs() << "before while\n";
 		while(!Stack.empty()){
 
 	        const BasicBlock *temp = Stack.back();
@@ -228,20 +221,15 @@ public:
 		if(!LoopSet.empty()){
 			Innermost_Loop(LoopSet);
 			std::vector<std::vector<const BasicBlock *>> toposortloopset(LoopSet.size());
-		errs() << "runtoposort\n";
-		errs() << "size " << toposortloopset.size()<<"\n";	
 
 			runToposort(LoopSet,toposortloopset);
-
-		errs() << "sort?\n";		
-		errs() << "size " << toposortloopset.size();	
+/*
         for(unsigned i = 0; i< toposortloopset.size(); ++i){
-			errs() << "firstloop \n";
             for (unsigned m = 0, n = toposortloopset[i].size(); m != n; ++m){
 	            errs() << " , "<<llvm::BlockAddress::get(const_cast<BasicBlock*>(toposortloopset[i][m]));
           } errs() << "\n";
         }
-
+*/
 
 
 			std::map<std::pair<const BasicBlock*,const BasicBlock*>,int> edges;
@@ -272,10 +260,9 @@ public:
 		if(isa<ReturnInst>(BB.getTerminator())) { // major hack?
 		addFinalPrintf(BB, Context, printf_func,LoopSet,retpaths);
 
+/*
 for(auto &BB: F)
             errs() <<"BasicBlock: "<< llvm::BlockAddress::get(const_cast<BasicBlock*>(&BB))<<"\n"<< BB << "\n";
-
-
 
     errs() << "after code:\n";
         for (unsigned i = 0, e = LoopSet.size(); i != e; ++i){
@@ -286,15 +273,13 @@ for(auto &BB: F)
           }
             errs() << "}\n";
         }
-
+*/
 
 		}
 		//runOnBasicBlock(BB);
 		}
 
 		}
-
-
 		 
 		return true; // since runOnBasicBlock has modified the program
 		}
@@ -322,8 +307,6 @@ for(auto &BB: F)
 			BasicBlockPrintfFormatStr = new GlobalVariable(*((BB.getParent())->getParent()), llvm::ArrayType::get(llvm::IntegerType::get(*Context, 8), strlen(finalPrintString)+1), true, llvm::GlobalValue::PrivateLinkage, format_const, "BasicBlockPrintfFormatStr");
 			printf_func = printf_prototype(*Context, ((BB.getParent())->getParent()));
 
-            
-
 			    Value* idxValue = IRB.CreateAdd(ConstantInt::get(Type::getInt32Ty(*Context),i * retpaths[i]),ConstantInt::get(Type::getInt32Ty(*Context),j));
 	    		std::vector<Value*> gepIndices(2);
 			    ConstantInt* initvalue = ConstantInt::get(*Context, APInt(32, StringRef("0"), 10));
@@ -342,7 +325,6 @@ for(auto &BB: F)
 	    	    call->setTailCall(false);
 
 			}
-
 		}
 		
 		}
