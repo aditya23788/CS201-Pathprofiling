@@ -91,10 +91,11 @@ namespace {
 		  }
 			errs() << "\n";
 		}
-		/*
+		
 		for(auto &BB: F) 
 		    //for(auto &I: BB)
-			errs() << llvm::BlockAddress::get(const_cast<BasicBlock*>(&BB))<<"\n"<< BB << "\n";*/
+			errs() << llvm::BlockAddress::get(const_cast<BasicBlock*>(&BB))<<"\n"<< BB << "\n";
+
 
 		std::vector<int> retpaths;
 
@@ -113,7 +114,8 @@ namespace {
 
         ArrayType* arrtype = ArrayType::get(Type::getInt32Ty(*Context),
                                    totalpaths);
-        pathctr = new GlobalVariable(arrtype,
+        pathctr = new GlobalVariable(*(F.getParent()),
+						arrtype,
                         false,
                         GlobalValue::ExternalLinkage,
                         Constant::getNullValue(arrtype),
@@ -123,6 +125,10 @@ namespace {
         pathctr->setInitializer(const_arr_2);
 		addtoEnd(LoopSet,retpaths);
 		}
+
+		for(auto &BB: F)
+            //for(auto &I: BB)
+            errs() << llvm::BlockAddress::get(const_cast<BasicBlock*>(&BB))<<"\n"<< BB << "\n";
 
 //Type::getInt32Ty(*Context), false, GlobalValue::InternalLinkage,
 //					ConstantArray::get(ArrayType::get(Type::getInt32Ty(*Context),totalpaths),llvm::ArrayRef<llvm::Constant*>() ));
@@ -137,13 +143,13 @@ namespace {
 			errs() << "\n";
 		}
 
-		//for(auto &BB: F) {
+		for(auto &BB: F) {
 		// Add the footer to Main's BB containing the return 0; statement BEFORE calling runOnBasicBlock
-		/*if(F.getName().equals("main") && isa<ReturnInst>(BB.getTerminator())) { // major hack?
+		if(F.getName().equals("main") && isa<ReturnInst>(BB.getTerminator())) { // major hack?
 		addFinalPrintf(BB, Context, bbCounter, BasicBlockPrintfFormatStr, printf_func);
-		}*/
+		}
 		//runOnBasicBlock(BB);
-		//}
+		}
 		 
 		return true; // since runOnBasicBlock has modified the program
 		}
@@ -170,8 +176,9 @@ namespace {
 		//----------------------------------
 		// Rest of this code is needed to: printf("%d\n", bbCounter); to the end of main, just BEFORE the return statement
 		// For this, prepare the SCCGraph, and append to last BB?
-		/*void addFinalPrintf(BasicBlock& BB, LLVMContext *Context, GlobalVariable *bbCounter, GlobalVariable *var, Function *printf_func) {
-		IRBuilder<> builder(BB.getTerminator()); // Insert BEFORE the final statement
+		void addFinalPrintf(BasicBlock& BB, LLVMContext *Context, GlobalVariable *bbCounter, GlobalVariable *var, Function *printf_func) {
+		IRBuilder<> IRB(BB.getTerminator()); // Insert BEFORE the final statement
+/*
 		std::vector<Constant*> indices;
 		Constant *zero = Constant::getNullValue(IntegerType::getInt32Ty(*Context));
 		indices.push_back(zero);
@@ -181,7 +188,30 @@ namespace {
 		Value *bbc = builder.CreateLoad(bbCounter);
 		CallInst *call = builder.CreateCall2(printf_func, var_ref, bbc);
 		call->setTailCall(false);
-		}*/
+*/
+	errs() << "inside addfinalprint\n";
+    Value *inc = IRB.CreateLoad(bbCounter);
+    Value* idxValue = IRB.CreateAdd(ConstantInt::get(Type::getInt32Ty(*Context),0 * 0),inc);
+    std::vector<Value*> gepIndices(2);
+    ConstantInt* initvalue = ConstantInt::get(*Context, APInt(32, StringRef("0"), 10));
+    gepIndices[0] = initvalue;
+    gepIndices[1] = idxValue;
+    GetElementPtrInst* pcpointer = GetElementPtrInst::Create(pathctr,gepIndices,"pcptr",BB.getTerminator());
+	errs() << "loaded array1\n";
+    //load from array
+    LoadInst* oldpc = new LoadInst(pcpointer,"oldpc",BB.getTerminator());
+
+        std::vector<Constant*> indices;
+        Constant *zero = Constant::getNullValue(IntegerType::getInt32Ty(*Context));
+        indices.push_back(zero);
+        indices.push_back(zero);
+        Constant *var_ref = ConstantExpr::getGetElementPtr(var, indices);
+	errs() << "loaded array2\n";
+//		Value *bbc = IRB.CreateLoad(bbCounter);
+		CallInst *call = IRB.CreateCall2(printf_func, var_ref, oldpc);
+	errs() <<"set tail\n";
+        call->setTailCall(false);
+		}
 		};
 	}
 
@@ -388,7 +418,8 @@ void BasicBlocksDemo::InsertBasicBlock(std::vector<std::vector<const BasicBlock*
 
 void BasicBlocksDemo::updateArray(BasicBlock *bb, unsigned loopnum,int loopsize)
 {
-	IRBuilder<> IRB(bb->getFirstInsertionPt());
+	errs() << *bb;
+	IRBuilder<> IRB(bb->getTerminator());
 	Value *inc = IRB.CreateLoad(bbCounter);
 //	errs() << "incValue value " <<inc <<"\n";
 	//Value *pathAddr = IRB.CreateLoad(pathctr);
@@ -396,17 +427,18 @@ void BasicBlocksDemo::updateArray(BasicBlock *bb, unsigned loopnum,int loopsize)
 	Value* idxValue = IRB.CreateAdd(ConstantInt::get(Type::getInt32Ty(*Context),loopnum * loopsize),inc);
 	//test
 	std::vector<Value*> gepIndices(2);
-    gepIndices[0] = Constant::getNullValue(Type::getInt32Ty(*Context));
+	ConstantInt* initvalue = ConstantInt::get(*Context, APInt(32, StringRef("0"), 10));
+    gepIndices[0] = initvalue;
     gepIndices[1] = idxValue;
-	GetElementPtrInst* pcpointer = GetElementPtrInst::Create(pathctr,gepIndices,"pcptr",bb->getFirstInsertionPt());
+	GetElementPtrInst* pcpointer = GetElementPtrInst::Create(pathctr,gepIndices,"pcptr",bb->getTerminator());
 	//load from array
-	LoadInst* oldpc = new LoadInst(pcpointer,"oldpc");
+	LoadInst* oldpc = new LoadInst(pcpointer,"oldpc",bb->getTerminator());
 	//add 
 	Value* one = ConstantInt::get(Type::getInt32Ty(*Context),1);
-	//BinaryOperator* newpc = BinaryOperator::Create(Instruction::Add,oldpc,one,"newpc",bb->getFirstInsertionPt());
+	//BinaryOperator* newpc = BinaryOperator::Create(Instruction::Add,oldpc,one,"newpc",bb->getTerminator());
 	Value* newpc = IRB.CreateAdd(ConstantInt::get(Type::getInt32Ty(*Context),1),oldpc);
 	//store
-	new StoreInst(newpc,pcpointer);
+	new StoreInst(newpc,pcpointer,bb->getTerminator());
 	//end test
 	
 	//Value *pathCtr = IRB.CreateExtractElement(pathAddr, loadAddr);
