@@ -1,7 +1,7 @@
 GROUP MEMBERS:
 
-ADITYA SWARUP: 861186998
-ALEX ROGERS: 861190826 
+ADITYA SWARUP
+ALEX ROGERS 
 
 BUILDING THE PASS:
 
@@ -30,9 +30,6 @@ $ clang -emit-llvm support/sai.c -c -o support/sai.bc
 $ make clean && make && ~/Workspace/llvm/Release+Asserts/bin/opt -load ../../../Release+Asserts/lib/CS201PathProfiling.${SHARED_LIB_EXT} -PathProfiling support/${INPUT}.bc -S -o support/${INPUT}.ll && \
 $ ~/Workspace/llvm/Release+Asserts/bin/llvm-as support/sai.ll -o support/sai.bb.bc
 $ ~/Workspace/llvm/Release+Asserts/bin/lli support/sai.bb.bc
-
-# tar -czf BasicBlocksDemo.tar.gz --exclude .git* --exclude *Store --exclude Debug* BasicBlocksDemo
-# tar -tvf BasicBlocksDemo.tar.gz
 
 READING THE OUTPUT:
 
